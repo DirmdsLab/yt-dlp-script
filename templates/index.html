@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>YT Download Server</title>
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='style.css') }}"
+    >
+
+</head>
+
+<body>
+
+<div class="container">
+
+    <h1>YT Download Server</h1>
+
+    <div class="card">
+
+        <label>
+            YouTube URL
+        </label>
+
+        <div class="url-box">
+
+            <input
+                id="url"
+                type="text"
+                placeholder="https://www.youtube.com/watch?v=..."
+            >
+
+            <button id="btnFormat">
+
+                Get Format
+
+            </button>
+
+        </div>
+
+    </div>
+
+    <div
+        class="card hidden"
+        id="videoInfo"
+    >
+
+        <div class="info">
+
+            <img
+                id="thumbnail"
+                src=""
+                alt=""
+            >
+
+            <div class="detail">
+
+                <h2 id="title">
+                    -
+                </h2>
+
+                <p>
+
+                    <b>Uploader :</b>
+
+                    <span id="uploader"></span>
+
+                </p>
+
+                <p>
+
+                    <b>Duration :</b>
+
+                    <span id="duration"></span>
+
+                </p>
+
+                <p>
+
+                    <b>Views :</b>
+
+                    <span id="views"></span>
+
+                </p>
+
+                <p>
+
+                    <b>Upload :</b>
+
+                    <span id="uploadDate"></span>
+
+                </p>
+
+            </div>
+
+        </div>
+
+    </div>
+
+    <div
+        class="card hidden"
+        id="videoCard"
+    >
+
+        <h2>
+
+            Video Format
+
+        </h2>
+
+        <div id="videoList">
+
+        </div>
+
+    </div>
+
+    <div
+        class="card hidden"
+        id="audioCard"
+    >
+
+        <h2>
+
+            Audio Format
+
+        </h2>
+
+        <div id="audioList">
+
+        </div>
+
+    </div>
+
+    <div
+        class="card hidden"
+        id="combinedCard"
+    >
+
+        <h2>
+
+            Progressive Format
+
+        </h2>
+
+        <div id="combinedList">
+
+        </div>
+
+    </div>
+
+    <div
+        class="card hidden"
+        id="downloadCard"
+    >
+
+        <div class="download-box">
+
+            <div>
+
+                <b>
+
+                    Selected Video :
+
+                </b>
+
+                <span id="selectedVideo">
+
+                    -
+
+                </span>
+
+            </div>
+
+            <div>
+
+                <b>
+
+                    Selected Audio :
+
+                </b>
+
+                <span id="selectedAudio">
+
+                    -
+
+                </span>
+
+            </div>
+
+            <div>
+
+                <b>
+
+                    Final Code :
+
+                </b>
+
+                <span id="selectedCode">
+
+                    -
+
+                </span>
+
+            </div>
+
+        </div>
+
+        <button
+            id="btnDownload"
+            class="download-btn"
+        >
+
+            Download
+
+        </button>
+
+    </div>
+
+    <div
+        class="card hidden"
+        id="logCard"
+    >
+
+        <h2>
+
+            Download Log
+
+        </h2>
+
+        <pre id="log">
+
+Waiting...
+
+        </pre>
+
+    </div>
+
+</div>
+
+<script
+src="{{ url_for('static', filename='app.js') }}"
+></script>
+
+</body>
+</html>
