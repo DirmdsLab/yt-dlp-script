@@ -1,201 +1,97 @@
 #!/usr/bin/env bash
-
 set -euo pipefail
 
-if [ $# -lt 1 ] || [ $# -gt 2 ]; then
-    echo "Usage: $0 <json-file> [autokeep]"
+if [[ $# -lt 1 || $# -gt 2 || ( $# -eq 2 && "$2" != autokeep ) ]]; then
+    printf 'Usage: %s JSON_FILE [autokeep]\n' "${0##*/}" >&2
+    exit 2
+fi
+
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+queue_file="$1"
+keep_file="$(dirname -- "$queue_file")/keep.json"
+if [[ ! -f "$queue_file" ]] || ! command -v jq >/dev/null; then
+    printf 'An existing JSON queue and jq are required.\n' >&2
+    exit 1
+fi
+if [[ "$queue_file" -ef "$keep_file" ]]; then
+    printf 'The queue file must be different from keep.json.\n' >&2
+    exit 1
+fi
+if ! jq -e 'type == "array" and all(.[]; type == "object" and (.url | type == "string"))' "$queue_file" >/dev/null; then
+    printf 'The queue must be a JSON array of objects with a URL.\n' >&2
     exit 1
 fi
 
-JSON_FILE="$1"
+temporary="$(mktemp -- "$(dirname -- "$queue_file")/.yt-queue.XXXXXX")"
+trap 'rm -f -- "$temporary"' EXIT
 
-AUTO_KEEP=false
-if [ $# -eq 2 ] && [ "$2" = "autokeep" ]; then
-    AUTO_KEEP=true
-fi
-
-KEEP_FILE="$(dirname "$JSON_FILE")/keep.json"
-
-if [ ! -f "$KEEP_FILE" ]; then
-    echo "[]" > "$KEEP_FILE"
-fi
-
-if [ ! -f "$JSON_FILE" ]; then
-    echo "JSON tidak ditemukan:"
-    echo "$JSON_FILE"
-    exit 1
-fi
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-YTDLP_SCRIPT="$SCRIPT_DIR/yt-download.sh"
-
-if [ ! -x "$YTDLP_SCRIPT" ]; then
-    echo "Script tidak ditemukan atau tidak executable:"
-    echo "$YTDLP_SCRIPT"
-    exit 1
-fi
-
-next_item() {
-
-    TMP=$(mktemp)
-
-    jq '.[1:]' "$JSON_FILE" > "$TMP"
-
-    mv "$TMP" "$JSON_FILE"
-
-}
-
-keep_item() {
-
-    TMP_KEEP=$(mktemp)
-
-    jq --slurpfile item <(jq '.[0]' "$JSON_FILE") \
-        '. + $item' "$KEEP_FILE" > "$TMP_KEEP"
-
-    mv "$TMP_KEEP" "$KEEP_FILE"
-
-    next_item
-
-}
-
-while true
-do
-
-    TOTAL=$(jq length "$JSON_FILE")
-
-    if [ "$TOTAL" -eq 0 ]; then
-        echo
-        echo "========================================"
-        echo "Semua download selesai."
-        echo "Queue kosong."
-        echo "========================================"
-        exit 0
+advance() {
+    if [[ "$1" == keep ]]; then
+        if [[ ! -e "$keep_file" ]]; then
+            printf '[]\n' > "$keep_file"
+        fi
+        jq --argjson item "$item" '
+            if type != "array" then error("keep.json must be an array")
+            elif index($item) != null then .
+            else . + [$item] end
+        ' "$keep_file" > "$temporary"
+        mv -- "$temporary" "$keep_file"
     fi
 
-    URL=$(jq -r '.[0].url' "$JSON_FILE")
-    SUB=$(jq -r '.[0].sub' "$JSON_FILE")
-    RES=$(jq -r '.[0].resolution' "$JSON_FILE")
+    jq '.[1:]' "$queue_file" > "$temporary"
+    mv -- "$temporary" "$queue_file"
+}
 
-    FORMAT=""
+while [[ "$(jq length "$queue_file")" -gt 0 ]]; do
+    item="$(jq -c '.[0]' "$queue_file")"
+    url="$(jq -r '.url' <<< "$item")"
+    pair="$(jq -r '.resolution // ""' <<< "$item")"
+    subtitle="$(jq -r '.sub // ""' <<< "$item")"
 
-    case "$RES" in
-        4k)
-            FORMAT="251+401"
-            ;;
-        1080)
-            FORMAT="251+399"
-            ;;
-        720)
-            FORMAT="251+398"
-            ;;
-        *)
-            FORMAT=""
-            ;;
+    case "$pair" in
+        4k) pair=251+401 ;;
+        1080) pair=251+399 ;;
+        720) pair=251+398 ;;
     esac
 
-    echo
-    echo "========================================"
-    echo "Sisa Queue : $TOTAL"
-    echo
-    echo "URL : $URL"
-    echo "RES : ${RES:-none}"
-    echo "SUB : ${SUB:-none}"
-    echo "========================================"
-    echo
-
-    LOG=$(mktemp)
-
-    # Download video
-    if [ -n "$FORMAT" ]; then
-        "$YTDLP_SCRIPT" "$FORMAT" "$URL" 2>&1 | tee "$LOG"
-    else
-        "$YTDLP_SCRIPT" "$URL" 2>&1 | tee "$LOG"
+    options=(--thumbnail=yes)
+    if [[ -n "$subtitle" ]]; then
+        options+=("--sub=$subtitle")
     fi
 
-    # Download subtitle
-    if [ -n "$SUB" ]; then
-        "$YTDLP_SCRIPT" "$URL" "--just-sub=$SUB" 2>&1 | tee -a "$LOG"
-    fi
-
-    # Download thumbnail
-    "$YTDLP_SCRIPT" "$URL" "--just-thumbnail" 2>&1 | tee -a "$LOG"
-
-    if $AUTO_KEEP; then
-
-        if grep -Eq \
-            "Requested format is not available|HTTP Error 403|Error opening input files|Error opening input file|No such file or directory" \
-            "$LOG"
-        then
-            echo
-            echo "⚠ Error terdeteksi. Auto Keep."
-
-            keep_item
-        else
-            echo
-            echo "✓ Download berhasil. Auto Next."
-
-            next_item
+    printf '\nDownloading %s (%s)\n' "$url" "${pair:-interactive}"
+    success=no
+    if [[ -n "$pair" ]]; then
+        if "$script_dir/yt-download.sh" "$pair" "$url" "${options[@]}"; then
+            success=yes
         fi
-
-        rm -f "$LOG"
-
-        continue
-
+    elif [[ "${2:-}" != autokeep ]]; then
+        if "$script_dir/yt-download.sh" --detail "$url" "${options[@]}"; then
+            success=yes
+        fi
     fi
 
-    rm -f "$LOG"
+    if [[ "${2:-}" == autokeep ]]; then
+        if [[ "$success" == yes ]]; then
+            advance next
+        else
+            advance keep
+        fi
+        continue
+    fi
 
-    while true
-    do
-        echo
-        read -rp "[n] next  [k] keep  [r] retry  [e] exit : " ANSWER
-
-        case "$ANSWER" in
-
-            n|N)
-
-                next_item
-
-                echo
-                echo "✓ Item selesai. Queue diperbarui."
-
-                break
-                ;;
-
-            k|K)
-
-                keep_item
-
-                echo
-                echo "✓ Item dipindahkan ke keep.json."
-
-                break
-                ;;
-
-            r|R)
-
-                echo
-                echo "↻ Mengulang item yang sama..."
-
-                break
-                ;;
-
-            e|E)
-
-                echo
-                echo "Exit."
-
-                exit 0
-                ;;
-
-            *)
-
-                echo "Pilihan tidak valid."
-
-                ;;
-
+    while true; do
+        if ! read -r -p '[n] Next  [k] Keep  [r] Retry  [e] Exit: ' answer; then
+            exit 0
+        fi
+        case "$answer" in
+            n|N) advance next; break ;;
+            k|K) advance keep; break ;;
+            r|R) break ;;
+            e|E) exit 0 ;;
+            *) printf 'Choose n, k, r or e.\n' ;;
         esac
-
     done
-
 done
+
+printf 'Queue is empty.\n'

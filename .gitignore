@@ -1,2 +1,6 @@
+.venv/
+__pycache__/
+cookie.txt
 cookies.txt
 yt.json
+keep.json

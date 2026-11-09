@@ -1,253 +1,132 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-
-    <meta charset="UTF-8">
-
-    <meta
-        name="viewport"
-        content="width=device-width, initial-scale=1.0"
-    >
-
-    <title>YT Download Server</title>
-
-    <link
-        rel="stylesheet"
-        href="{{ url_for('static', filename='style.css') }}"
-    >
-
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <title>YouTube Downloader</title>
+    <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script defer src="{{ url_for('static', filename='app.js') }}"></script>
 </head>
-
 <body>
+    <main>
+        <header class="hero">
+            <span class="eyebrow">LOCAL MEDIA TOOL</span>
+            <h1>YouTube Downloader</h1>
+            <p>Choose your streams, subtitles and thumbnail. Raw audio and video stay with the merged file.</p>
+        </header>
 
-<div class="container">
-
-    <h1>YT Download Server</h1>
-
-    <div class="card">
-
-        <label>
-            YouTube URL
-        </label>
-
-        <div class="url-box">
-
-            <input
-                id="url"
-                type="text"
-                placeholder="https://www.youtube.com/watch?v=..."
-            >
-
-            <button id="btnFormat">
-
-                Get Format
-
-            </button>
-
-        </div>
-
-    </div>
-
-    <div
-        class="card hidden"
-        id="videoInfo"
-    >
-
-        <div class="info">
-
-            <img
-                id="thumbnail"
-                src=""
-                alt=""
-            >
-
-            <div class="detail">
-
-                <h2 id="title">
-                    -
-                </h2>
-
-                <p>
-
-                    <b>Uploader :</b>
-
-                    <span id="uploader"></span>
-
-                </p>
-
-                <p>
-
-                    <b>Duration :</b>
-
-                    <span id="duration"></span>
-
-                </p>
-
-                <p>
-
-                    <b>Views :</b>
-
-                    <span id="views"></span>
-
-                </p>
-
-                <p>
-
-                    <b>Upload :</b>
-
-                    <span id="uploadDate"></span>
-
-                </p>
-
+        <form id="search-form" class="surface">
+            <label for="url">YouTube URL</label>
+            <div class="search-row">
+                <input id="url" name="url" type="url" placeholder="https://youtu.be/…" autocomplete="off" required>
+                <button type="submit" id="search-button">Search</button>
             </div>
+        </form>
 
+        <div id="results" hidden>
+            <section class="surface media" aria-labelledby="video-title">
+                <img id="preview" alt="" referrerpolicy="no-referrer" hidden>
+                <div>
+                    <h2 id="video-title"></h2>
+                    <p id="uploader" class="muted"></p>
+                </div>
+            </section>
+
+            <form id="download-form">
+                <div class="stream-grid">
+                    <section class="surface stream" aria-labelledby="audio-title">
+                        <h2 id="audio-title">Audio formats</h2>
+                        <p class="muted">Select a format code for the audio stream.</p>
+                        <div id="audio-list" class="format-list" role="radiogroup" aria-labelledby="audio-title"></div>
+                        <button type="button" class="tonal" data-mode="audio">Audio only</button>
+                    </section>
+
+                    <section class="surface stream" aria-labelledby="video-formats-title">
+                        <h2 id="video-formats-title">Video formats</h2>
+                        <p class="muted">Select a format code for the video stream.</p>
+                        <div id="video-list" class="format-list" role="radiogroup" aria-labelledby="video-formats-title"></div>
+                        <button type="button" class="tonal" data-mode="video">Video only</button>
+                    </section>
+                </div>
+
+                <div class="stream-grid">
+                    <section class="surface" aria-labelledby="subtitle-title">
+                        <h2 id="subtitle-title">Subtitles</h2>
+                        <div class="control-row">
+                            <select id="subtitle" aria-labelledby="subtitle-title"></select>
+                            <button type="button" class="tonal" data-mode="subtitle">Subtitle only</button>
+                        </div>
+                    </section>
+
+                    <section class="surface" aria-labelledby="thumbnail-title">
+                        <h2 id="thumbnail-title">Thumbnail</h2>
+                        <p id="thumbnail-size" class="muted"></p>
+                        <div class="control-row">
+                            <label class="check-row"><input type="checkbox" id="thumbnail"> Include thumbnail</label>
+                            <button type="button" class="tonal" data-mode="thumbnail">Thumbnail only</button>
+                        </div>
+                    </section>
+                </div>
+
+                <section class="surface output" aria-labelledby="output-title">
+                    <div>
+                        <h2 id="output-title">Download package</h2>
+                        <p class="muted">Saves both raw streams, the merged video and any selected extras.</p>
+                    </div>
+                    <div class="control-row">
+                        <label for="container">Output format</label>
+                        <select id="container">
+                            <option value="mp4">MP4</option>
+                            <option value="mkv">MKV</option>
+                            <option value="webm">WebM</option>
+                        </select>
+                        <button type="submit" data-mode="full">Download</button>
+                    </div>
+                    <div class="transfer-estimate" aria-live="polite">
+                        <span>Download size</span>
+                        <strong id="package-size"></strong>
+                        <small id="package-breakdown" class="muted"></small>
+                    </div>
+                </section>
+            </form>
+
+            <details id="unavailable" class="surface" hidden>
+                <summary>Other formats</summary>
+                <p class="muted">Preview or protected formats shown for reference.</p>
+                <ul id="unavailable-list"></ul>
+            </details>
         </div>
 
-    </div>
-
-    <div
-        class="card hidden"
-        id="videoCard"
-    >
-
-        <h2>
-
-            Video Format
-
-        </h2>
-
-        <div id="videoList">
-
-        </div>
-
-    </div>
-
-    <div
-        class="card hidden"
-        id="audioCard"
-    >
-
-        <h2>
-
-            Audio Format
-
-        </h2>
-
-        <div id="audioList">
-
-        </div>
-
-    </div>
-
-    <div
-        class="card hidden"
-        id="combinedCard"
-    >
-
-        <h2>
-
-            Progressive Format
-
-        </h2>
-
-        <div id="combinedList">
-
-        </div>
-
-    </div>
-
-    <div
-        class="card hidden"
-        id="downloadCard"
-    >
-
-        <div class="download-box">
-
-            <div>
-
-                <b>
-
-                    Selected Video :
-
-                </b>
-
-                <span id="selectedVideo">
-
-                    -
-
-                </span>
-
+        <section id="status-card" class="surface status" aria-label="Activity" hidden>
+            <p id="status" role="status" aria-live="polite"></p>
+            <p id="progress-summary" class="muted progress-summary" hidden></p>
+            <div id="progress-stages" class="progress-stages" hidden></div>
+            <section id="downloaded-files" class="downloaded-files" aria-labelledby="downloaded-files-title" hidden>
+                <div class="downloaded-files-heading">
+                    <h2 id="downloaded-files-title">Files from this download</h2>
+                    <a id="download-zip" class="download-link" download hidden>Download ZIP</a>
+                </div>
+                <ul id="files"></ul>
+            </section>
+        </section>
+        <details id="activity-log" class="surface activity-log">
+            <summary>Command log</summary>
+            <pre id="log-entries" tabindex="0">No commands yet.</pre>
+        </details>
+    </main>
+    <template id="progress-stage">
+        <div class="progress-stage" data-state="waiting">
+            <div class="progress-heading">
+                <strong class="progress-label"></strong>
+                <span class="progress-percent"></span>
             </div>
-
-            <div>
-
-                <b>
-
-                    Selected Audio :
-
-                </b>
-
-                <span id="selectedAudio">
-
-                    -
-
-                </span>
-
+            <div class="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100">
+                <div class="progress-fill"></div>
             </div>
-
-            <div>
-
-                <b>
-
-                    Final Code :
-
-                </b>
-
-                <span id="selectedCode">
-
-                    -
-
-                </span>
-
-            </div>
-
+            <small class="progress-detail muted"></small>
         </div>
-
-        <button
-            id="btnDownload"
-            class="download-btn"
-        >
-
-            Download
-
-        </button>
-
-    </div>
-
-    <div
-        class="card hidden"
-        id="logCard"
-    >
-
-        <h2>
-
-            Download Log
-
-        </h2>
-
-        <pre id="log">
-
-Waiting...
-
-        </pre>
-
-    </div>
-
-</div>
-
-<script
-src="{{ url_for('static', filename='app.js') }}"
-></script>
-
+    </template>
 </body>
 </html>
