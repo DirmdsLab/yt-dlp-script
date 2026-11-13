@@ -385,12 +385,7 @@ function setyt_progress
     return 0
 end
 
-function setyt --description "Download a YouTube video on the server"
-    if test (count $argv) -lt 2; or test (count $argv) -gt 3
-        printf 'Usage: setyt AUDIO+VIDEO URL [SUBTITLE]\n' >&2
-        return 2
-    end
-
+function _setyt_download_one
     set -l server_url "$YT_SERVER"
 
     if test -z "$server_url"
@@ -436,4 +431,73 @@ function setyt --description "Download a YouTube video on the server"
     end
 
     return $codes[1]
+end
+
+
+function setyt --description "Download YouTube videos from URL or text file"
+    if test (count $argv) -lt 2; or test (count $argv) -gt 3
+        printf 'Usage:\n'
+        printf '  setyt AUDIO+VIDEO URL [SUBTITLE]\n'
+        printf '  setyt AUDIO+VIDEO FILE.txt\n' >&2
+        return 2
+    end
+
+    set -l resolution "$argv[1]"
+    set -l target "$argv[2]"
+
+    # Batch mode: second argument is an existing file
+    if test -f "$target"; and test (count $argv) -eq 2
+        set -l fail_file "/tmp/setyt-failed.txt"
+        set -l total 0
+        set -l failed 0
+
+        touch "$fail_file"
+
+        printf '\nBatch download started: %s\n' "$target"
+        printf 'Failed URLs will be saved to: %s\n\n' "$fail_file"
+
+        while read -l url
+            set url (string replace -r '\r$' '' -- "$url")
+
+            test -z "$url"; and continue
+
+            set total (math "$total + 1")
+
+            printf '\n========================================\n'
+            printf '[%s] Processing: %s\n' "$total" "$url"
+            printf '========================================\n'
+
+            if _setyt_download_one "$resolution" "$url"
+                printf 'SUCCESS: %s\n' "$url"
+            else
+                set failed (math "$failed + 1")
+                printf '%s\n' "$url" >> "$fail_file"
+                printf 'FAILED: %s\n' "$url"
+            end
+        end < "$target"
+
+        # Remove the original input file after processing.
+        rm -f -- "$target"
+
+        printf '\n========================================\n'
+        printf 'Batch finished.\n'
+        printf 'Total: %s\n' "$total"
+        printf 'Failed: %s\n' "$failed"
+        printf 'Successful: %s\n' (math "$total - $failed")
+        printf 'Failed URLs: %s\n' "$fail_file"
+        printf '========================================\n'
+
+        if test "$failed" -gt 0
+            return 1
+        end
+
+        return 0
+    end
+
+    # Single URL mode
+    if test (count $argv) -eq 3
+        _setyt_download_one "$resolution" "$target" "$argv[3]"
+    else
+        _setyt_download_one "$resolution" "$target"
+    end
 end
