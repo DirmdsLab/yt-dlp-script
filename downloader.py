@@ -456,7 +456,8 @@ def write_stream(info, item, track, staging, sources, extra, hooks, log=None):
     )
 
 
-def download(info, selection, extra=None, report=lambda message: None, progress=None, log=None):
+def download(info, selection, extra=None, report=lambda message: None, progress=None, log=None,
+             *, library_export=False):
     if selection.mode not in MODES or selection.container not in CONTAINERS:
         raise RequestError("Choose a valid download mode and output format.")
 
@@ -481,6 +482,8 @@ def download(info, selection, extra=None, report=lambda message: None, progress=
 
     folder = None
     files = []
+    library_files = []
+    warnings = []
     try:
         title = output_title(info)
         folder = create_folder(title)
@@ -503,31 +506,44 @@ def download(info, selection, extra=None, report=lambda message: None, progress=
                     tracker.finish(sources.get(code, raw[track]))
             if needs_merge:
                 report(f"Merging the raw streams into {selection.container.upper()}...")
-                files.append(merge_tracks(raw["video"], raw["audio"],
-                                          folder / f"{title}.{selection.container}", selection.container, codecs,
-                                          progress=progress, duration=duration, log=log))
+                merged = merge_tracks(raw["video"], raw["audio"],
+                                      folder / f"{title}.{selection.container}", selection.container, codecs,
+                                      progress=progress, duration=duration, log=log)
+                files.append(merged)
+                library_files.append(merged)
+            extras = []
             if language:
-                report(f"Downloading subtitles ({language})...")
-                if log:
-                    log(f"yt-dlp API: download subtitle {language}")
-                path = write_item(
-                    info, staging, "subtitle", extra, file_stem=f"subtitle.{language}",
-                    skip_download=True, writesubtitles=True, writeautomaticsub=True,
-                    subtitleslangs=[re.escape(language)], subtitlesformat="vtt/best",
-                    ignore_no_formats_error=True,
-                )
-                files.append(path.replace(folder / f"{title}_sub{path.suffix}"))
+                extras.append(("subtitle", "sub", {
+                    "file_stem": f"subtitle.{language}", "writesubtitles": True,
+                    "writeautomaticsub": True, "subtitleslangs": [re.escape(language)],
+                    "subtitlesformat": "vtt/best",
+                }))
             if thumbnail:
-                report("Downloading thumbnail...")
+                extras.append(("thumbnail", "thumbnail", {"writethumbnail": True}))
+            for kind, suffix, options in extras:
+                report(f"Downloading {kind}...")
                 if log:
-                    log("yt-dlp API: download thumbnail")
-                path = write_item(info, staging, "thumbnail", extra,
-                                  skip_download=True, writethumbnail=True, ignore_no_formats_error=True)
-                files.append(path.replace(folder / f"{title}_thumbnail{path.suffix}"))
+                    log(f"yt-dlp API: download {kind}")
+                try:
+                    source = write_item(info, staging, kind, extra, skip_download=True,
+                                        ignore_no_formats_error=True, **options)
+                    path = source.replace(folder / f"{title}_{suffix}{source.suffix}")
+                except (DownloadError, ExtractorError, DownloadFailure, OSError) as error:
+                    if not library_export:
+                        raise
+                    warnings.append(f"The {kind} could not be downloaded.")
+                    if log:
+                        log(f"Could not download {kind}: {error}")
+                else:
+                    files.append(path)
+                    library_files.append(path)
     except (DownloadError, ExtractorError, DownloadFailure, OSError) as error:
         raise DownloadFailure(str(error), folder, files) from error
 
     result = {"directory": str(folder), "files": [str(path) for path in files]}
+    if library_export:
+        result["library_files"] = [str(path) for path in library_files]
+        result["warnings"] = warnings
     if progress:
         result["saved_bytes"] = sum(path.stat().st_size for path in files)
     return result

@@ -68,7 +68,7 @@ def download_error_details(error):
             "files": [str(path) for path in error.files]}
 
 
-def download_events(url, selection, browser_links):
+def download_events(url, selection, browser_links, library_export):
     events = Queue()
     disconnected = Event()
 
@@ -80,7 +80,8 @@ def download_events(url, selection, browser_links):
         start = monotonic()
         try:
             result = download_for_request(
-                url, selection, progress=lambda event: emit("progress", **event),
+                url, selection, library_export=library_export,
+                progress=lambda event: emit("progress", **event),
                 report=lambda message: emit("status", message=message),
                 log=lambda message: emit("log", message=message),
             )
@@ -105,6 +106,7 @@ def download_events(url, selection, browser_links):
                 continue
             if browser_links and event["type"] == "result":
                 event["downloads"] = download_links(event, download_root())
+                event.pop("library_files", None)
             yield json.dumps(event, ensure_ascii=False) + "\n"
             if event["type"] == "result":
                 break
@@ -116,8 +118,9 @@ def wants_progress():
     return any(mime == PROGRESS_MIME and quality > 0 for mime, quality in request.accept_mimetypes)
 
 
-def progress_response(url, selection, *, browser_links=False):
-    return Response(stream_with_context(download_events(url, selection, browser_links)),
+def progress_response(url, selection, *, browser_links=False, library_export=False):
+    events = download_events(url, selection, browser_links, library_export)
+    return Response(stream_with_context(events),
                     mimetype=PROGRESS_MIME, headers={
                         "Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no",
                     })
@@ -194,9 +197,15 @@ def web_download():
     data = json_body()
     selection = web_selection(data)
     url = youtube_url(data.get("url"))
+    library_export = data.get("library_export", False)
+    if not isinstance(library_export, bool) or (library_export and selection.mode != "full"):
+        raise RequestError("Saving to Tracks requires a merged download.")
     if wants_progress():
-        return progress_response(url, selection, browser_links=True)
-    result = download_for_request(url, selection)
+        return progress_response(url, selection, browser_links=True, library_export=library_export)
+    result = download_for_request(url, selection, library_export=library_export)
+    if library_export:
+        result["downloads"] = download_links(result, download_root())
+        result.pop("library_files", None)
     return jsonify(success=True, **result)
 
 

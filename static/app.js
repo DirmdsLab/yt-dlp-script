@@ -5,6 +5,9 @@ const searchForm = get("search-form");
 const downloadForm = get("download-form");
 const buttons = Array.from(downloadForm.querySelectorAll("[data-mode]"));
 const progressMime = "application/x-ndjson";
+const pageParams = new URLSearchParams(window.location.search);
+const inWaguri = pageParams.get("client") === "waguri";
+const initialVideoUrl = pageParams.get("url");
 const logLines = [];
 let currentVideo = null;
 let busy = false;
@@ -95,9 +98,17 @@ function showStatus(message, { error = false, files = [], downloads = null } = {
     get("status").textContent = message;
     card.dataset.error = String(error);
     card.hidden = false;
+    const saveToTracks = get("save-to-tracks");
+    if (inWaguri && downloads?.library) {
+        saveToTracks.href = downloads.library;
+        saveToTracks.hidden = false;
+    } else {
+        saveToTracks.removeAttribute("href");
+        saveToTracks.hidden = true;
+    }
     list.replaceChildren(...entries.map((file) => {
         const item = document.createElement("li");
-        if (file.url) {
+        if (file.url && !inWaguri) {
             const link = document.createElement("a");
             link.href = file.url;
             link.download = "";
@@ -115,7 +126,7 @@ function showStatus(message, { error = false, files = [], downloads = null } = {
         }
         return item;
     }));
-    if (downloads?.archive) {
+    if (downloads?.archive && !inWaguri) {
         archive.href = downloads.archive;
         archive.hidden = false;
     } else {
@@ -235,9 +246,17 @@ function renderResults(data) {
         subtitle.add(new Option(`${item.name} (${item.id}) · ${item.source} · ${sizeLabel(item.size, item.size_estimated)}`,
                                 item.id));
     }
+    if (inWaguri && data.subtitles.length) {
+        const languages = (navigator.languages?.length ? navigator.languages : [navigator.language])
+            .filter(Boolean).map((language) => language.toLowerCase().split("-")[0]);
+        const local = data.subtitles.filter((item) => languages.includes(item.id.toLowerCase().split("-")[0]));
+        subtitle.value = (local.find((item) => item.source === "Manual")
+            ?? data.subtitles.find((item) => item.source === "Manual")
+            ?? local[0] ?? data.subtitles[0]).id;
+    }
 
     const thumbnail = get("thumbnail");
-    thumbnail.checked = false;
+    thumbnail.checked = inWaguri && data.has_thumbnail;
     get("thumbnail-size").textContent = data.has_thumbnail
         ? sizeLabel(data.thumbnail_size, data.thumbnail_size_estimated) : "None available";
     get("container").value = "mp4";
@@ -388,9 +407,12 @@ async function startDownload(mode) {
             container,
             sub: get("subtitle").value,
             thumbnail: get("thumbnail").checked,
+            library_export: inWaguri && mode === "full",
         }, progress.update);
-        const message = data.success ? "Download complete." : data.error;
-        showStatus(data.directory ? `${message}\nFolder: ${basename(data.directory)}` : message,
+        const message = [data.success ? "Download complete." : data.error, ...(data.warnings ?? [])]
+            .filter(Boolean).join(" ");
+        const nextStep = data.downloads?.library && inWaguri ? " Tap Save to Tracks to copy the files." : "";
+        showStatus(data.directory ? `${message}${nextStep}\nFolder: ${basename(data.directory)}` : message,
                    { error: !data.success, files: data.files, downloads: data.downloads });
     } catch (error) {
         showStatus(error.message, { error: true });
@@ -408,4 +430,13 @@ downloadForm.addEventListener("submit", (event) => {
 });
 for (const button of buttons.filter((button) => button.type === "button")) {
     button.addEventListener("click", () => startDownload(button.dataset.mode));
+}
+
+if (inWaguri && initialVideoUrl) {
+    get("url").value = initialVideoUrl;
+    get("search-button").click();
+}
+
+if (inWaguri) {
+    for (const button of buttons.filter((button) => button.type === "button")) button.hidden = true;
 }

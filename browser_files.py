@@ -12,7 +12,7 @@ from unicodedata import normalize
 from urllib.parse import quote
 from zipfile import ZIP_STORED, ZipFile
 
-from flask import Blueprint, Response, abort, send_file, url_for
+from flask import Blueprint, Response, abort, jsonify, send_file, url_for
 from werkzeug.http import dump_options_header
 
 browser_files = Blueprint("browser_files", __name__)
@@ -57,6 +57,8 @@ def download_links(result, root):
         return None
 
     entries = []
+    library_indexes = []
+    library_files = set(result.get("library_files", ()))
     for filename in result["files"]:
         path = Path(filename)
         if path.parent != directory:
@@ -67,22 +69,30 @@ def download_links(result, root):
         except OSError:
             continue
         if S_ISREG(metadata.st_mode):
+            if filename in library_files:
+                library_indexes.append(len(entries))
             entries.append(SavedFile(path, metadata.st_dev, metadata.st_ino, metadata.st_size, metadata.st_mtime_ns))
     if not entries:
         return None
 
     token = token_urlsafe(24)
     with jobs_lock:
-        jobs[token] = (canonical.name, tuple(entries))
+        jobs[token] = (canonical.name, tuple(entries), tuple(library_indexes))
         if len(jobs) > JOB_LIMIT:
             jobs.popitem(last=False)
 
-    return {
+    links = {
         "archive": url_for("browser_files.archive", token=token),
-        "files": [{"name": entry.path.name, "size": entry.size,
-                   "url": url_for("browser_files.file", token=token, index=index)}
-                  for index, entry in enumerate(entries)],
+        "files": [file_link(token, index, entry) for index, entry in enumerate(entries)],
     }
+    if library_indexes and len(library_indexes) == len(library_files):
+        links["library"] = url_for("browser_files.library_manifest", token=token)
+    return links
+
+
+def file_link(token, index, entry):
+    return {"name": entry.path.name, "size": entry.size,
+            "url": url_for("browser_files.file", token=token, index=index)}
 
 
 def get_job(token):
@@ -128,7 +138,7 @@ def archive_chunks(folder, files, stack):
 
 @browser_files.get("/results/<token>/files/<int:index>")
 def file(token, index):
-    _, entries = get_job(token)
+    _, entries, _ = get_job(token)
     if index >= len(entries):
         abort(404)
     entry = entries[index]
@@ -146,9 +156,19 @@ def file(token, index):
     return response
 
 
+@browser_files.get("/results/<token>/library.json")
+def library_manifest(token):
+    _, entries, indexes = get_job(token)
+    if not indexes:
+        abort(404)
+    response = jsonify(files=[file_link(token, index, entries[index]) for index in indexes])
+    response.cache_control.no_store = True
+    return response
+
+
 @browser_files.get("/results/<token>/archive.zip")
 def archive(token):
-    folder, entries = get_job(token)
+    folder, entries, _ = get_job(token)
     stack = ExitStack()
     try:
         files = [(entry, stack.enter_context(entry.open())) for entry in entries]
