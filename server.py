@@ -12,6 +12,7 @@ from time import monotonic
 from flask import Flask, Response, jsonify, render_template, request, stream_with_context
 
 from browser_files import browser_files, download_links
+from temp_audio import playlist_tracks, prepare_audio, temp_audio
 from downloader import (
     CONTAINERS, MODES, DownloadFailure, RequestError, Selection, describe_video,
     download, download_root, inspect_video, local_cookie_options, split_pair, youtube_url,
@@ -19,6 +20,7 @@ from downloader import (
 
 app = Flask(__name__)
 app.register_blueprint(browser_files)
+app.register_blueprint(temp_audio)
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024
 PORT = 7010
 PROGRESS_MIME = "application/x-ndjson"
@@ -220,6 +222,19 @@ def save():
         return progress_response(url, selection)
     result = download_for_request(url, selection)
     return jsonify(success=True, **result)
+
+
+@app.post("/api/play-audio")
+def play_audio():
+    data = json_body()
+    result = prepare_audio(text_field(data, "url"), text_field(data, "audio"), get_info,
+                           app.logger.info)
+    return jsonify(success=True, **result)
+
+
+@app.post("/api/playlist")
+def playlist():
+    return jsonify(success=True, tracks=playlist_tracks(text_field(json_body(), "url")))
 
 
 if __name__ == "__main__":
